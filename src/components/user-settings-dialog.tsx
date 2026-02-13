@@ -14,7 +14,7 @@ export function UserSettingsDialog({
     isOpen,
     onClose
 }: UserSettingsDialogProps) {
-    const { profile, user, signOut, initialize } = useAuthStore();
+    const { profile, signOut, initialize } = useAuthStore();
     const [name, setName] = useState(profile?.name || "");
     const [loading, setLoading] = useState(false);
     const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);

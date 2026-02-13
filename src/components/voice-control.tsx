@@ -2,11 +2,10 @@ import { useState, useEffect, useRef } from 'react';
 import { Button } from "@/components/ui/button";
 import { Mic, MicOff } from "lucide-react";
 // import { parseVoiceCommands } from "@/lib/voice-parser";
-import { useX01Store } from "@/lib/store";
+// import { useX01Store } from "@/lib/store";
 import { cn } from "@/lib/utils";
 
 export function VoiceControl({
-    inputMode = 'single',
     onTotalScore,
     className,
     mini = false

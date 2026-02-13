@@ -1,6 +1,6 @@
 import type { Throw } from "./types";
 
-type Language = 'en' | 'de';
+
 
 const NUMBERS: Record<string, number> = {
     // English
@@ -38,7 +38,7 @@ export function parseVoiceCommands(transcript: string): Throw[] {
             continue;
         }
 
-        let segment = 0;
+
 
         // Check named numbers
         if (NUMBERS[word] !== undefined) {
