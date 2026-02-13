@@ -6,8 +6,7 @@ on:
 
 env:
   REGISTRY: ghcr.io
-  # Ersetze DEIN_GITHUB_USER und REPO_NAME (alles kleingeschrieben!)
-  IMAGE_NAME: dein_user/darts-app 
+  IMAGE_NAME: sebastianmoe/dartcounter 
 
 jobs:
   build:
@@ -20,7 +19,6 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Das hier ermöglicht den Build für Raspberry Pi (ARM64)
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
 
@@ -39,6 +37,5 @@ jobs:
         with:
           context: .
           push: true
-          # Hier passiert die Magie: Bau für PC und Raspi gleichzeitig
           platforms: linux/amd64,linux/arm64
           tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
