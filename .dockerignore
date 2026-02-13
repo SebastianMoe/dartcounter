@@ -5,5 +5,3 @@ dist
 .env
 .env.local
 README.md
-Dockerfile
-nginx.conf
