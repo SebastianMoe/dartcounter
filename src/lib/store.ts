@@ -74,6 +74,12 @@ export const useX01Store = create<X01State>()(
                     legWinnerId: null,
                     matchConfig: matchConfig || { mode: 'firstTo', target: 1 }
                 });
+
+                // Broadcast if online
+                const mp = useMultiplayerStore.getState();
+                if (mp.activeSession) {
+                    mp.broadcast('init-game', { type, playerNames, customScore, matchConfig });
+                }
             },
 
             addThrow: (t) => {
@@ -199,11 +205,22 @@ export const useX01Store = create<X01State>()(
                 if (!finalState.winnerId && !finalState.legWinnerId) {
                     finalState.nextPlayer();
                 }
+
+                // Broadcast if online
+                const mp = useMultiplayerStore.getState();
+                if (mp.activeSession) {
+                    mp.broadcast('manual-turn', { amount });
+                }
             },
 
             undoThrow: () => {
-                // ... existing undo ...
                 const state = get();
+
+                // Broadcast if online
+                const mp = useMultiplayerStore.getState();
+                if (mp.activeSession) {
+                    mp.broadcast('undo', {});
+                }
                 // If leg was won, we can't easily undo "Leg Win" state without more history. 
                 // Current history only tracks Turns.
                 // TODO: Add "GameSnapshot" history for robust Leg Undo. 

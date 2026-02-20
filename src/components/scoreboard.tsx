@@ -3,13 +3,64 @@ import { ThrowDisplay } from "./throw-display";
 import { Button } from "@/components/ui/button";
 import { Check } from "lucide-react";
 import { VoiceControl } from "./voice-control";
+import { useEffect } from "react";
+import { useMultiplayerStore } from "@/lib/multiplayer-store";
+import { useAuthStore } from "@/lib/auth-store";
 
 interface ScoreboardProps {
     inputMode?: 'single' | 'total';
 }
 
 export function Scoreboard({ inputMode = 'single' }: ScoreboardProps) {
-    const { players, currentTurn, history, winnerId, legWinnerId, nextLeg, resetGame, manualTurn } = useX01Store();
+    const { players, currentTurn, history, winnerId, legWinnerId, nextLeg, resetGame, manualTurn, addThrow, nextPlayer, undoThrow } = useX01Store();
+    const { activeSession, onBroadcast } = useMultiplayerStore();
+
+    // Multiplayer Syncing
+    useEffect(() => {
+        if (!activeSession) return;
+
+        console.log("Multiplayer listeners active for session:", activeSession.id);
+
+        const currentUserId = useAuthStore.getState().user?.id;
+
+        const unsubInit = onBroadcast('init-game', (payload: any) => {
+            if (payload.senderId !== currentUserId) {
+                useX01Store.getState().initGame(payload.type, payload.playerNames, payload.customScore, payload.matchConfig);
+            }
+        });
+
+        const unsubThrow = onBroadcast('throw', (payload: any) => {
+            if (payload.senderId !== currentUserId) {
+                addThrow(payload.throw);
+            }
+        });
+
+        const unsubNext = onBroadcast('next-player', (payload: any) => {
+            if (payload.senderId !== currentUserId) {
+                nextPlayer();
+            }
+        });
+
+        const unsubUndo = onBroadcast('undo', (payload: any) => {
+            if (payload.senderId !== currentUserId) {
+                undoThrow();
+            }
+        });
+
+        const unsubManual = onBroadcast('manual-turn', (payload: any) => {
+            if (payload.senderId !== currentUserId) {
+                manualTurn(payload.amount);
+            }
+        });
+
+        return () => {
+            unsubInit();
+            unsubThrow();
+            unsubNext();
+            unsubUndo();
+            unsubManual();
+        };
+    }, [activeSession, onBroadcast, addThrow, nextPlayer, undoThrow, manualTurn]);
 
     if (players.length === 0) {
         return <div className="p-8 text-center text-muted-foreground">No game active</div>;
@@ -27,7 +78,10 @@ export function Scoreboard({ inputMode = 'single' }: ScoreboardProps) {
         <div className="flex flex-col h-full">
             {/* Header */}
             <div className="flex justify-between items-center p-4 border-b bg-muted/5 flex-none">
-                <Button variant="ghost" size="sm" onClick={resetGame} className="text-muted-foreground hover:text-destructive">
+                <Button variant="ghost" size="sm" onClick={() => {
+                    useMultiplayerStore.getState().leaveSession();
+                    resetGame();
+                }} className="text-muted-foreground hover:text-destructive">
                     Exit Game
                 </Button>
                 <div className="font-mono text-sm opacity-50">501</div>
@@ -42,7 +96,10 @@ export function Scoreboard({ inputMode = 'single' }: ScoreboardProps) {
                         <div className="text-6xl font-black text-primary mb-8">
                             {players.find(p => p.id === winnerId)?.name}
                         </div>
-                        <Button size="lg" onClick={resetGame}>
+                        <Button size="lg" onClick={() => {
+                            useMultiplayerStore.getState().leaveSession();
+                            resetGame();
+                        }}>
                             Back to Menu
                         </Button>
                     </div>
