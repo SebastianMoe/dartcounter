@@ -10,6 +10,8 @@ const supabaseAnonKey = (window as any).VITE_SUPABASE_ANON_KEY && (window as any
 
 if (!supabaseUrl || !supabaseAnonKey) {
     console.warn('Supabase credentials missing. Ensure VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY are set.');
+} else {
+    console.log('Supabase initialized with URL:', supabaseUrl.substring(0, 15) + '...');
 }
 
 export const supabase = createClient(
