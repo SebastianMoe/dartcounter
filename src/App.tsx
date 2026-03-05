@@ -1,4 +1,4 @@
-import { lazy, Suspense, useState } from 'react'
+import { lazy, Suspense, useState, useEffect } from 'react'
 import { Button } from "@/components/ui/button"
 import { useX01Store } from "@/lib/store"
 import { usePlayerStore } from "@/lib/player-store"
@@ -6,16 +6,16 @@ import { PlayerSelection } from "@/components/player-selection"
 
 import { GameSetup } from "@/components/game-setup"
 import type { GameType, MatchMode } from "@/lib/types"
-
-const Scoreboard = lazy(() => import("@/components/scoreboard").then(module => ({ default: module.Scoreboard })))
-const CricketScoreboard = lazy(() => import("@/components/cricket-scoreboard").then(module => ({ default: module.CricketScoreboard })))
-const Numpad = lazy(() => import("@/components/numpad").then(module => ({ default: module.Numpad })))
 import { useCricketStore } from '@/lib/cricket-store'
 import { useAuthStore } from '@/lib/auth-store'
 import { useMultiplayerStore } from '@/lib/multiplayer-store'
 import { InvitationOverlay } from '@/components/invitation-overlay'
 import { useRealtimeSync } from '@/hooks/useRealtimeSync'
-import { useEffect } from 'react'
+import { PinOverlay } from '@/components/pin-overlay'
+
+const Scoreboard = lazy(() => import("@/components/scoreboard").then(module => ({ default: module.Scoreboard })))
+const CricketScoreboard = lazy(() => import("@/components/cricket-scoreboard").then(module => ({ default: module.CricketScoreboard })))
+const Numpad = lazy(() => import("@/components/numpad").then(module => ({ default: module.Numpad })))
 
 function App() {
   const { gameId: x01Id, initGame: initX01 } = useX01Store()
@@ -25,6 +25,10 @@ function App() {
   const { initialize: initMultiplayer } = useMultiplayerStore()
 
   useRealtimeSync();
+
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    return localStorage.getItem('darts_app_authenticated') === 'true';
+  });
 
   const [view, setView] = useState<'home' | 'players' | 'game-setup'>('home')
 
@@ -63,7 +67,12 @@ function App() {
     }
   };
 
-  // 1. Game Active? Show Game View
+  // 1. PIN Protection
+  if (!isAuthenticated) {
+    return <PinOverlay onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
+
+  // 2. Game Active? Show Game View
   if (gameId) {
     return (
       <div className="h-[100dvh] w-full flex flex-col bg-background">
