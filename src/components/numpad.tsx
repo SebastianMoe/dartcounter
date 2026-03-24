@@ -4,7 +4,6 @@ import { useX01Store } from "@/lib/store";
 import { useCricketStore } from "@/lib/cricket-store";
 import { useAroundTheClockStore } from "@/lib/around-the-clock-store";
 import { useState, useEffect } from "react";
-import { cn } from "@/lib/utils";
 import { VoiceControl } from "./voice-control";
 
 interface NumpadProps {
@@ -22,32 +21,18 @@ export function Numpad({ mode, setMode }: NumpadProps) {
     const store = (isClock ? clock : (isCricket ? cricket : x01)) as any;
     const { currentTurn, winnerId, legWinnerId, nextLeg, nextPlayer } = store;
 
-    const [multiplier, setMultiplier] = useState<1 | 2 | 3>(1);
     const [totalInput, setTotalInput] = useState("");
 
 
     const handleNum = (segment: number) => {
         store.addThrow({
             score: segment,
-            multiplier: multiplier,
+            multiplier: 1,
             segment: segment,
-            isDouble: multiplier === 2,
-            isTriple: multiplier === 3,
+            isDouble: false,
+            isTriple: false,
             isOuterBull: false,
             isInnerBull: false
-        });
-        setMultiplier(1);
-    };
-
-    const handleBull = (inner: boolean) => {
-        store.addThrow({
-            score: 25,
-            multiplier: inner ? 2 : 1,
-            segment: 25,
-            isDouble: inner,
-            isTriple: false,
-            isOuterBull: !inner,
-            isInnerBull: inner
         });
     };
 
@@ -127,43 +112,7 @@ export function Numpad({ mode, setMode }: NumpadProps) {
             </div>
 
 
-            {/* Selector Row - Only for single dart mode */}
-            {mode === 'single' && (
-                <div className="grid grid-cols-5 border-y border-white/5 bg-[#131E18]">
-                    {[
-                        { label: 'Single', value: 1, active: multiplier === 1 },
-                        { label: 'Double', value: 2, active: multiplier === 2 },
-                        { label: 'Treble', value: 3, active: multiplier === 3 }
-                    ].map((tab) => (
-                        <Button
-                            key={tab.label}
-                            variant="ghost"
-                            className={cn(
-                                "h-[5vh] min-h-[36px] sm:min-h-[48px] max-h-[72px] rounded-none flex flex-col items-center justify-center gap-0.5 border-b-2 transition-all border-r border-white/5",
-                                tab.active ? "border-b-dart-red text-white bg-white/5" : "border-b-transparent text-white/30 hover:text-white"
-                            )}
-                            onClick={() => setMultiplier(tab.value as 1 | 2 | 3)}
-                        >
-                            <span className="text-[9px] sm:text-sm font-black uppercase tracking-tighter leading-none">{tab.label}</span>
-                        </Button>
-                    ))}
-
-                    <Button
-                        variant="ghost"
-                        className="h-[5vh] min-h-[36px] sm:min-h-[48px] max-h-[72px] rounded-none flex flex-col items-center justify-center gap-0 border-r border-white/5 hover:bg-white/5 transition-all"
-                        onClick={() => handleBull(true)}
-                    >
-                        <span className="text-[3.5vw] max-text-xl font-oswald font-black text-white uppercase tracking-tighter">Bull</span>
-                    </Button>
-                    <Button
-                        variant="ghost"
-                        className="h-[5vh] min-h-[36px] sm:min-h-[48px] max-h-[72px] rounded-none flex flex-col items-center justify-center gap-0 hover:bg-white/5 transition-all"
-                        onClick={() => handleBull(false)}
-                    >
-                        <span className="text-[3.5vw] max-text-xl font-oswald font-black text-white uppercase tracking-tighter">Outer</span>
-                    </Button>
-                </div>
-            )}
+            {/* Selector Row - Removed as requested */}
 
             {/* Main Numeric Grid */}
             <div className="bg-[#131E18] flex-1 min-h-0">
@@ -198,11 +147,11 @@ export function Numpad({ mode, setMode }: NumpadProps) {
             </div>
 
             {/* Bottom Controls */}
-            <div className="grid grid-cols-3 border-t border-white/5 h-[10vh] min-h-[60px] max-h-[120px]">
+            <div className="grid grid-cols-3 border-t border-white/5 h-[8vh] min-h-[50px] max-h-[100px]">
                 <Button
                     variant="ghost"
                     onClick={() => mode === 'total' ? setTotalInput(prev => prev.slice(0, -1)) : store.undoThrow()}
-                    className="h-full rounded-none text-white/40 hover:text-white hover:bg-white/5 transition-all border-r border-b border-white/5"
+                    className="h-full rounded-none text-white/40 hover:text-white hover:bg-white/5 transition-all border-r border-white/5"
                 >
                     <Undo className="w-[6vw] min-w-[24px]" />
                 </Button>
@@ -210,15 +159,15 @@ export function Numpad({ mode, setMode }: NumpadProps) {
                 {mode === 'single' ? (
                     <Button
                         variant="ghost"
-                        className="h-full rounded-none text-[6vw] max-text-4xl font-oswald font-black uppercase tracking-tighter text-white/40 hover:text-white hover:bg-white/5 transition-all border-r border-b border-white/5"
+                        className="h-full rounded-none text-[6vw] max-text-4xl font-oswald font-black text-white hover:bg-white/5 active:bg-white/10 transition-all border-r border-white/5"
                         onClick={() => handleNum(0)}
                     >
-                        Miss
+                        0
                     </Button>
                 ) : (
                     <Button
                         variant="ghost"
-                        className="h-full rounded-none text-[8vw] max-text-6xl font-oswald font-black text-white hover:bg-white/5 active:bg-white/10 transition-all border-r border-b border-white/5"
+                        className="h-full rounded-none text-[8vw] max-text-6xl font-oswald font-black text-white hover:bg-white/5 active:bg-white/10 transition-all border-r border-white/5"
                         onClick={() => setTotalInput(prev => (prev.length < 3 ? prev + "0" : prev))}
                     >
                         0
@@ -231,7 +180,7 @@ export function Numpad({ mode, setMode }: NumpadProps) {
                         if (store.manualTurn) store.manualTurn(s);
                         else store.addThrow({ score: s, multiplier: 1, segment: s, isDouble: false, isTriple: false, isOuterBull: false, isInnerBull: false, isManual: true });
                     }}
-                    className="h-full w-full rounded-none bg-transparent hover:bg-white/5 border-r border-b border-white/5 flex items-center justify-center p-0 shadow-none ring-0 ring-offset-0"
+                    className="h-full w-full rounded-none bg-transparent hover:bg-white/5 border-white/5 flex items-center justify-center p-0 shadow-none ring-0 ring-offset-0"
                 />
             </div>
 

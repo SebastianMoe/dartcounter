@@ -1,4 +1,5 @@
 import { lazy, Suspense, useState, useEffect } from 'react'
+import { useRegisterSW } from 'virtual:pwa-register/react'
 import { Button } from "@/components/ui/button"
 import { useX01Store } from "@/lib/store"
 import { usePlayerStore } from "@/lib/player-store"
@@ -36,6 +37,24 @@ function App() {
     return localStorage.getItem('darts_app_authenticated') === 'true';
   });
 
+  const {
+    needRefresh: [needRefresh],
+    updateServiceWorker,
+  } = useRegisterSW({
+    onRegistered(r: ServiceWorkerRegistration | undefined) {
+      console.log('SW Registered: ' + r)
+    },
+    onRegisterError(error: any) {
+      console.log('SW registration error', error)
+    },
+  })
+
+  useEffect(() => {
+    if (needRefresh) {
+      updateServiceWorker(true)
+    }
+  }, [needRefresh, updateServiceWorker])
+
   const [view, setView] = useState<'home' | 'menu' | 'game-setup' | 'add-player' | 'stats'>('home')
   const [isOnlineFlow, setIsOnlineFlow] = useState(false)
   const [selectedGameType, setSelectedGameType] = useState<GameType>('501')
@@ -51,6 +70,13 @@ function App() {
       initMultiplayer();
     }
   }, [user, initMultiplayer]);
+  useEffect(() => {
+    if (isAuthenticated && !localStorage.getItem('darts_help_shown_v1')) {
+      setShowHelp(true);
+      localStorage.setItem('darts_help_shown_v1', 'true');
+    }
+  }, [isAuthenticated]);
+
   const [inputMode, setInputMode] = useState<'single' | 'total'>('single')
 
   const gameId = x01Id || cricketId || clockId;
@@ -82,10 +108,15 @@ function App() {
     }
   };
 
-  // 1. PIN Protection
-  if (!isAuthenticated) {
-    return <PinOverlay onAuthenticated={() => setIsAuthenticated(true)} />;
-  }
+  // 2. Navigation State & Synchronization
+  useEffect(() => {
+    if (activeSession && view !== 'game-setup' && !gameId) {
+      const isHost = activeSession.host_id === user?.id;
+      if (isHost && view === 'add-player') {
+        setView('menu');
+      }
+    }
+  }, [activeSession, user, view, gameId]);
 
   // 2. Game Active? Show Game View
   if (gameId) {
@@ -106,15 +137,10 @@ function App() {
     )
   }
 
-  // 2. Navigation State & Synchronization
-  useEffect(() => {
-    if (activeSession && view !== 'game-setup' && !gameId) {
-      const isHost = activeSession.host_id === user?.id;
-      if (isHost && view === 'add-player') {
-        setView('menu');
-      }
-    }
-  }, [activeSession, user, view, gameId]);
+  // 1. PIN Protection
+  if (!isAuthenticated) {
+    return <PinOverlay onAuthenticated={() => setIsAuthenticated(true)} />;
+  }
 
   if (activeSession && !gameId && activeSession.target_id === user?.id) {
     return (
