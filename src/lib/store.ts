@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { v4 as uuidv4 } from 'uuid';
 
-import type { GameType, Player, Throw, Turn } from './types';
+import type { GameType, Player, Throw, Turn, MatchConfig } from './types';
 import { useMultiplayerStore } from './multiplayer-store';
 
 interface X01State {
@@ -15,15 +15,18 @@ interface X01State {
     currentPlayerIndex: number;
     winnerId: string | null;
     legWinnerId: string | null;
-    matchConfig: { mode: 'firstTo' | 'bestOf', target: number };
+    matchConfig: MatchConfig;
+    showCheckoutPrompt: { playerId: string, maxDarts: number, wasFinish: boolean } | null;
 
     // Actions
-    initGame: (type: GameType, playerNames: string[], customScore?: number, matchConfig?: { mode: 'firstTo' | 'bestOf', target: number }) => void;
+    initGame: (type: GameType, players: { id: string, name: string }[], customScore?: number, matchConfig?: MatchConfig, isRemote?: boolean) => void;
     addThrow: (t: Throw) => void;
     manualTurn: (amount: number) => void;
     undoThrow: () => void;
     nextPlayer: () => void;
     nextLeg: () => void;
+    rematch: () => void;
+    submitCheckoutAttempts: (count: number) => void;
     resetGame: () => void;
 }
 
@@ -39,20 +42,25 @@ export const useX01Store = create<X01State>()(
             currentPlayerIndex: 0,
             winnerId: null,
             legWinnerId: null,
-            matchConfig: { mode: 'firstTo', target: 1 }, // Default
+            matchConfig: { mode: 'firstTo', target: 1, outMode: 'double' },
+            showCheckoutPrompt: null,
 
-            initGame: (type, playerNames, customScore, matchConfig) => {
+            initGame: (type, selectedPlayers, customScore, matchConfig, isRemote) => {
                 let startScore = 501;
                 if (type === '301') startScore = 301;
                 else if (type === '701') startScore = 701;
                 else if (type === 'Custom' && customScore) startScore = customScore;
 
-                const players: Player[] = playerNames.map(name => ({
-                    id: uuidv4(),
-                    name,
+                const players: Player[] = selectedPlayers.map(p => ({
+                    id: p.id,
+                    name: p.name,
                     score: startScore,
                     legsWon: 0,
                     setsWon: 0,
+                    hasCheckedIn: (matchConfig?.inMode || 'single') === 'single',
+                    checkoutAttempts: 0,
+                    highFinish: 0,
+                    first9Scores: []
                 }));
 
                 set({
@@ -72,13 +80,13 @@ export const useX01Store = create<X01State>()(
                     currentPlayerIndex: 0,
                     winnerId: null,
                     legWinnerId: null,
-                    matchConfig: matchConfig || { mode: 'firstTo', target: 1 }
+                    matchConfig: matchConfig || { mode: 'firstTo', target: 1, outMode: 'double', inMode: 'single', lengthType: 'legs' }
                 });
 
-                // Broadcast if online
+                // Broadcast if online and NOT a remote initialization
                 const mp = useMultiplayerStore.getState();
-                if (mp.activeSession) {
-                    mp.broadcast('init-game', { type, playerNames, customScore, matchConfig });
+                if (mp.activeSession && !isRemote) {
+                    mp.broadcast('init-game', { type, playerNames: selectedPlayers.map(p => p.name), customScore, matchConfig });
                 }
             },
 
@@ -98,19 +106,38 @@ export const useX01Store = create<X01State>()(
                 // Check if turn is full (3 throws)
                 if (currentTurn.throws.length >= 3 || currentTurn.isBust) return;
 
-                const throwScore = t.score * t.multiplier;
-                const newScoreAfter = currentTurn.scoreAfter - throwScore;
+                const currentPlayer = state.players.find(p => p.id === state.currentTurn!.playerId)!;
+                let hasCheckedIn = currentPlayer.hasCheckedIn;
+                let throwEffectScore = t.score * t.multiplier;
+
+                // CHECK IN LOGIC
+                if (!hasCheckedIn) {
+                    const inMode = state.matchConfig.inMode || 'single';
+                    if (inMode === 'double') {
+                        if (t.isDouble) hasCheckedIn = true;
+                        else throwEffectScore = 0;
+                    } else if (inMode === 'master') {
+                        if (t.isDouble || t.isTriple) hasCheckedIn = true;
+                        else throwEffectScore = 0;
+                    } else {
+                        hasCheckedIn = true;
+                    }
+                }
+
+                const newScoreAfter = currentTurn.scoreAfter - throwEffectScore;
 
                 let isBust = false;
                 if (newScoreAfter < 0) {
                     isBust = true;
                 } else if (newScoreAfter === 0) {
-                    // LEG WINNER POTENTIALLY
-                    // Double Out check would go here (e.g., && !t.isDouble) if we enforced it.
-                    // For now assuming any hit on 0 is a win.
-                } else if (newScoreAfter === 1 && state.gameType !== 'Custom') { // Basic "Master Out" check for 1
-                    // For Custom games, maybe allow 1? keeping it safe for now.
-                    isBust = true;
+                    // Out-mode check (Double Out / Master Out)
+                    const outMode = state.matchConfig.outMode || 'double';
+                    if (outMode === 'double' && !t.isDouble) isBust = true;
+                    else if (outMode === 'master' && !t.isDouble && !t.isTriple) isBust = true;
+                } else if (newScoreAfter === 1) {
+                    // Cannot finish with 1 if double/master out is active
+                    const outMode = state.matchConfig.outMode || 'double';
+                    if (outMode !== 'single') isBust = true;
                 }
 
                 const updatedTurn: Turn = {
@@ -120,39 +147,62 @@ export const useX01Store = create<X01State>()(
                     isBust
                 };
 
-                // Check Leg Win
                 let legWinnerId: string | null = null;
                 let matchWinnerId: string | null = null;
-                let updatedPlayers = state.players.map(p =>
-                    p.id === state.currentTurn!.playerId
-                        ? { ...p, score: updatedTurn.scoreAfter }
-                        : p
-                );
+
+                // Track state changes to players
+                let updatedPlayers = state.players.map(p => {
+                    if (p.id === state.currentTurn!.playerId) {
+                        const isFirstFinish = newScoreAfter === 0 && !isBust;
+                        const isManual = t.isManual;
+                        // For single darts, we check the score BEFORE the dart was thrown
+                        const inCheckoutRange = currentTurn.scoreAfter <= 50;
+
+                        return {
+                            ...p,
+                            score: isBust ? p.score : newScoreAfter,
+                            hasCheckedIn: isBust ? p.hasCheckedIn : hasCheckedIn,
+                            // Automatic tracking for single-dart entry
+                            checkoutAttempts: (!isManual && inCheckoutRange)
+                                ? (p.checkoutAttempts || 0) + 1
+                                : (p.checkoutAttempts || 0),
+                            highFinish: isFirstFinish ? Math.max(p.highFinish || 0, currentTurn.scoreBefore) : (p.highFinish || 0)
+                        };
+                    }
+                    return p;
+                });
 
                 if (newScoreAfter === 0 && !isBust) {
                     legWinnerId = state.currentTurn.playerId;
+                    // ... (Sets/Legs logic)
+                    const winnerPlayer = updatedPlayers.find(p => p.id === legWinnerId)!;
+                    const isSets = state.matchConfig.lengthType === 'sets';
+                    const target = state.matchConfig.target;
+                    const mode = state.matchConfig.mode;
 
-                    // Update legs won
-                    updatedPlayers = updatedPlayers.map(p =>
-                        p.id === legWinnerId
-                            ? { ...p, legsWon: p.legsWon + 1 }
-                            : p
-                    );
-
-                    // Check Match Win
-                    const winnerPlayer = updatedPlayers.find(p => p.id === legWinnerId);
-                    if (winnerPlayer) {
-                        const { mode, target } = state.matchConfig;
-                        if (mode === 'firstTo') {
-                            if (winnerPlayer.legsWon >= target) {
-                                matchWinnerId = legWinnerId;
-                            }
-                        } else if (mode === 'bestOf') {
-                            const majority = Math.floor(target / 2) + 1;
-                            if (winnerPlayer.legsWon >= majority) {
-                                matchWinnerId = legWinnerId;
-                            }
+                    if (isSets) {
+                        winnerPlayer.legsWon += 1;
+                        if (winnerPlayer.legsWon >= 2) {
+                            winnerPlayer.setsWon += 1;
+                            updatedPlayers = updatedPlayers.map(p => ({ ...p, legsWon: 0 }));
+                            const winSetsNeeded = mode === 'firstTo' ? target : Math.floor(target / 2) + 1;
+                            if (winnerPlayer.setsWon >= winSetsNeeded) matchWinnerId = legWinnerId;
                         }
+                    } else {
+                        winnerPlayer.legsWon += 1;
+                        const winLegsNeeded = mode === 'firstTo' ? target : Math.floor(target / 2) + 1;
+                        if (winnerPlayer.legsWon >= winLegsNeeded) matchWinnerId = legWinnerId;
+                    }
+
+                    // TRIGGER PROMPT ONLY ON MANUAL FINISH
+                    if (t.isManual) {
+                        set({
+                            showCheckoutPrompt: {
+                                playerId: state.currentTurn.playerId,
+                                maxDarts: 3 - currentTurn.throws.length,
+                                wasFinish: true
+                            }
+                        });
                     }
                 }
 
@@ -161,7 +211,6 @@ export const useX01Store = create<X01State>()(
                     players: updatedPlayers,
                     winnerId: matchWinnerId,
                     legWinnerId: matchWinnerId ? null : legWinnerId
-                    // If match is won, we don't show "Leg Winner" overlay, we show "Match Winner" (which winnerId triggers)
                 });
             },
 
@@ -192,12 +241,47 @@ export const useX01Store = create<X01State>()(
                         : p
                 );
 
+                const isFinish = newScoreAfter === 0 && !isBust;
+                let legWinnerId: string | null = null;
+                let matchWinnerId: string | null = null;
+
+                if (isFinish) {
+                    legWinnerId = state.currentTurn.playerId;
+                    // Trigger set/leg win logic (refactored or duplicated for now)
+                    const winnerPlayer = updatedPlayers.find(p => p.id === legWinnerId)!;
+                    const isSets = state.matchConfig.lengthType === 'sets';
+                    const target = state.matchConfig.target;
+                    const mode = state.matchConfig.mode;
+
+                    if (isSets) {
+                        winnerPlayer.legsWon += 1;
+                        if (winnerPlayer.legsWon >= 2) {
+                            winnerPlayer.setsWon += 1;
+                            updatedPlayers.forEach(p => p.legsWon = 0);
+                            const winSetsNeeded = mode === 'firstTo' ? target : Math.floor(target / 2) + 1;
+                            if (winnerPlayer.setsWon >= winSetsNeeded) matchWinnerId = legWinnerId;
+                        }
+                    } else {
+                        winnerPlayer.legsWon += 1;
+                        const winLegsNeeded = mode === 'firstTo' ? target : Math.floor(target / 2) + 1;
+                        if (winnerPlayer.legsWon >= winLegsNeeded) matchWinnerId = legWinnerId;
+                    }
+
+                    // TRIGGER PROMPT ON MANUAL FINISH
+                    set({
+                        showCheckoutPrompt: {
+                            playerId: state.currentTurn.playerId,
+                            maxDarts: 3, // assume 3 available if manual
+                            wasFinish: true
+                        }
+                    });
+                }
+
                 set({
                     currentTurn: updatedTurn,
                     players: updatedPlayers,
-                    // No automatic win detection on manual entry for now to avoid accidental game ends? 
-                    // Or implementing basic 0 check:
-                    winnerId: (newScoreAfter === 0 && !isBust) ? state.currentTurn.playerId : null
+                    winnerId: matchWinnerId,
+                    legWinnerId: matchWinnerId ? null : legWinnerId
                 });
 
                 // Auto-advance turn if game not won
@@ -261,8 +345,24 @@ export const useX01Store = create<X01State>()(
 
             nextPlayer: () => {
                 const state = get();
-                // Block if leg is won (must click "Next Leg")
                 if (state.legWinnerId || state.winnerId) return;
+
+                const finishedTurn = state.currentTurn;
+                if (!finishedTurn) return;
+
+                const isManual = finishedTurn.throws.some(th => th.isManual);
+                const wasInCheckoutRange = finishedTurn.scoreBefore <= 50;
+
+                // TRIGGER PROMPT on turn end ONLY if manual entry and in checkout range
+                if (isManual && wasInCheckoutRange && finishedTurn.scoreAfter > 0) {
+                    set({
+                        showCheckoutPrompt: {
+                            playerId: finishedTurn.playerId,
+                            maxDarts: 3,
+                            wasFinish: false
+                        }
+                    });
+                }
 
                 // Broadcast if online
                 const mp = useMultiplayerStore.getState();
@@ -270,16 +370,27 @@ export const useX01Store = create<X01State>()(
                     mp.broadcast('next-player', {});
                 }
 
-                // ... existing nextPlayer ...
-                if (!state.currentTurn) return;
-
-                const finishedTurn = state.currentTurn;
                 const history = [...state.history, finishedTurn];
+
+                // First 9 Tracking
+                const playerHistoryInLeg = history.filter(h => h.playerId === finishedTurn.playerId);
+                const updatedPlayers = state.players.map(p => {
+                    if (p.id === finishedTurn.playerId && playerHistoryInLeg.length <= 3) {
+                        const turnScore = finishedTurn.scoreBefore - finishedTurn.scoreAfter;
+                        return {
+                            ...p,
+                            first9Scores: [...(p.first9Scores || []), turnScore]
+                        };
+                    }
+                    return p;
+                });
+
                 const nextIndex = (state.currentPlayerIndex + 1) % state.players.length;
-                const nextPlayer = state.players[nextIndex];
+                const nextPlayer = updatedPlayers[nextIndex];
 
                 set({
                     history,
+                    players: updatedPlayers,
                     currentPlayerIndex: nextIndex,
                     currentTurn: {
                         id: uuidv4(),
@@ -294,41 +405,73 @@ export const useX01Store = create<X01State>()(
 
             nextLeg: () => {
                 const state = get();
-                if (!state.legWinnerId) return; // Can only call if leg finished
+                if (!state.legWinnerId) return;
 
-                // Reset scores to startingScore
-                // Rotate starting player? 
-                // Typically: Loser starts? Or alternate? 
-                // Let's alternate start for now based on total legs played (simple round robin).
-                // Or just keep Next Player in rotation? 
-                // Standard: Player who "should" have started next if leg didn't end? 
-                // Or: Start player rotates. 
-                // Implementation: Shift global player order? No, just set `currentPlayerIndex`.
-
-                // Simple approach: The player AFTER the one who started the LAST leg starts this one.
-                // We need to track who started the current leg. 
-                // For MVP: Just Next Player in list starts.
                 const nextStarterIndex = (state.currentPlayerIndex + 1) % state.players.length;
 
                 const resetPlayers = state.players.map(p => ({
                     ...p,
                     score: state.startingScore,
-                    // keep legsWon
+                    hasCheckedIn: (state.matchConfig.inMode || 'single') === 'single'
                 }));
 
                 set({
                     legWinnerId: null,
                     players: resetPlayers,
                     currentPlayerIndex: nextStarterIndex,
-                    history: [], // Clear turn history for new leg
+                    // history is NOT cleared, it persists for MatchSummary
                     currentTurn: {
                         id: uuidv4(),
-                        playerId: state.players[nextStarterIndex].id,
+                        playerId: resetPlayers[nextStarterIndex].id,
                         throws: [],
                         scoreBefore: state.startingScore,
                         scoreAfter: state.startingScore,
                         isBust: false
                     }
+                });
+            },
+
+            rematch: () => {
+                const state = get();
+                const resetPlayers = state.players.map(p => ({
+                    ...p,
+                    score: state.startingScore,
+                    legsWon: 0,
+                    setsWon: 0,
+                    hasCheckedIn: (state.matchConfig.inMode || 'single') === 'single',
+                    checkoutAttempts: 0,
+                    highFinish: 0,
+                    first9Scores: []
+                }));
+
+                set({
+                    winnerId: null,
+                    legWinnerId: null,
+                    players: resetPlayers,
+                    currentPlayerIndex: 0,
+                    history: [],
+                    currentTurn: {
+                        id: uuidv4(),
+                        playerId: resetPlayers[0].id,
+                        throws: [],
+                        scoreBefore: state.startingScore,
+                        scoreAfter: state.startingScore,
+                        isBust: false
+                    }
+                });
+            },
+
+            submitCheckoutAttempts: (count) => {
+                const state = get();
+                if (!state.showCheckoutPrompt) return;
+
+                const { playerId } = state.showCheckoutPrompt;
+
+                set({
+                    players: state.players.map(p =>
+                        p.id === playerId ? { ...p, checkoutAttempts: (p.checkoutAttempts || 0) + count } : p
+                    ),
+                    showCheckoutPrompt: null
                 });
             },
 

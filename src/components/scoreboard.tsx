@@ -1,25 +1,23 @@
 import { useX01Store } from "@/lib/store";
-import { ThrowDisplay } from "./throw-display";
 import { Button } from "@/components/ui/button";
-import { Check } from "lucide-react";
-import { VoiceControl } from "./voice-control";
-import { useEffect } from "react";
+import { ArrowLeft, HelpCircle, X } from "lucide-react";
+import { useEffect, useState } from "react";
 import { useMultiplayerStore } from "@/lib/multiplayer-store";
 import { useAuthStore } from "@/lib/auth-store";
+import { cn } from "@/lib/utils";
+import { getCheckout } from "@/lib/checkout-utils";
+import { MatchSummary } from "./match-summary";
+import { CheckoutPrompt } from "./checkout-prompt";
 
-interface ScoreboardProps {
-    inputMode?: 'single' | 'total';
-}
-
-export function Scoreboard({ inputMode = 'single' }: ScoreboardProps) {
-    const { players, currentTurn, history, winnerId, legWinnerId, nextLeg, resetGame, manualTurn, addThrow, nextPlayer, undoThrow } = useX01Store();
+// Scoreboard component
+export function Scoreboard() {
+    const { players, currentTurn, history, winnerId, legWinnerId, nextLeg, resetGame, manualTurn, addThrow, nextPlayer, undoThrow, matchConfig, startingScore } = useX01Store();
+    const [showHelp, setShowHelp] = useState(false);
     const { activeSession, onBroadcast } = useMultiplayerStore();
 
     // Multiplayer Syncing
     useEffect(() => {
         if (!activeSession) return;
-
-        console.log("Multiplayer listeners active for session:", activeSession.id);
 
         const currentUserId = useAuthStore.getState().user?.id;
 
@@ -66,163 +64,188 @@ export function Scoreboard({ inputMode = 'single' }: ScoreboardProps) {
         return <div className="p-8 text-center text-muted-foreground">No game active</div>;
     }
 
-    // ... existing derived state ...
-
-    // We need to find the "active" player for display purposes. 
-    // If game is won, winnerId is set. 
-    // If leg is won, legWinnerId is set.
-
     const activePlayerId = winnerId || legWinnerId || currentTurn?.playerId;
 
     return (
-        <div className="flex flex-col h-full">
-            {/* Header */}
-            <div className="flex justify-between items-center p-4 border-b bg-muted/5 flex-none">
-                <Button variant="ghost" size="sm" onClick={() => {
+        <div className="flex flex-col h-full bg-[#131E18]">
+            {/* Header - Fixed Height Viewport Based */}
+            <div className="flex justify-between items-center px-4 h-[7vh] min-h-[44px] max-h-[64px] flex-none border-b border-white/10">
+                <Button variant="ghost" size="icon" onClick={() => {
                     useMultiplayerStore.getState().leaveSession();
                     resetGame();
-                }} className="text-muted-foreground hover:text-destructive">
-                    Exit Game
+                }} className="text-white hover:bg-white/10 h-8 w-8">
+                    <ArrowLeft className="w-5 h-5" />
                 </Button>
-                <div className="font-mono text-sm opacity-50">501</div>
+                <div className="text-[4.5vw] max-text-xl font-black font-oswald tracking-tighter uppercase whitespace-nowrap overflow-hidden text-ellipsis px-2 text-white">
+                    {matchConfig.mode === 'firstTo' ? 'FIRST TO' : 'BEST OF'}{" "}
+                    {matchConfig.target} {matchConfig.lengthType === 'sets' ? (matchConfig.target === 1 ? 'SET' : 'SETS') : (matchConfig.target === 1 ? 'LEG' : 'LEGS')}
+                </div>
+                <Button variant="ghost" size="icon" onClick={() => setShowHelp(true)} className="text-white hover:bg-white/10 h-8 w-8">
+                    <HelpCircle className="w-5 h-5" />
+                </Button>
             </div>
 
             <div className="flex flex-col flex-1 overflow-hidden relative">
-                {/* Winner Overlay (Match) */}
-                {winnerId && (
-                    <div className="absolute inset-0 bg-background/95 z-50 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
-                        <div className="text-6xl mb-4">🏆</div>
-                        <h2 className="text-4xl font-bold mb-2">MATCH WINNER</h2>
-                        <div className="text-6xl font-black text-primary mb-8">
-                            {players.find(p => p.id === winnerId)?.name}
-                        </div>
-                        <Button size="lg" onClick={() => {
-                            useMultiplayerStore.getState().leaveSession();
-                            resetGame();
-                        }}>
-                            Back to Menu
-                        </Button>
-                    </div>
-                )}
+                {/* Overlays */}
+                <MatchSummary />
+                <CheckoutPrompt />
 
-                {/* Leg Winner Overlay */}
                 {legWinnerId && !winnerId && (
-                    <div className="absolute inset-0 bg-background/90 z-40 flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300">
+                    <div className="fixed inset-0 bg-background/90 z-[90] flex flex-col items-center justify-center animate-in fade-in zoom-in duration-300 border-4 border-dart-green rounded-[3rem] m-6 overflow-hidden shadow-2xl">
                         <div className="text-5xl mb-4">🎯</div>
-                        <h2 className="text-3xl font-bold mb-2">LEG FINISHED</h2>
-                        <div className="text-5xl font-black text-primary mb-8">
+                        <h2 className="text-3xl font-bold mb-2 text-white uppercase tracking-tighter">Leg Finished</h2>
+                        <div className="text-5xl font-black text-dart-green mb-8 uppercase tracking-tighter">
                             {players.find(p => p.id === legWinnerId)?.name}
                         </div>
-                        <p className="text-muted-foreground mb-8">won the leg!</p>
-                        <Button size="lg" className="h-16 text-xl px-8" onClick={nextLeg}>
-                            Start Next Leg
+                        <Button size="lg" className="h-16 text-xl px-12 bg-dart-green text-white hover:bg-dart-green/90 font-black uppercase tracking-tighter rounded-2xl" onClick={nextLeg}>
+                            Next Leg
                         </Button>
                     </div>
                 )}
 
-                {/* Players Grid */}
-                <div className="flex-1 grid grid-cols-2 gap-px bg-muted/20">
-                    {(() => {
-                        const currentPlayerIndex = players.findIndex(p => p.id === (activePlayerId || currentTurn?.playerId));
-                        let playersToShow = players;
-
-                        if (players.length > 2) {
-                            const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
-                            playersToShow = [players[currentPlayerIndex], players[nextPlayerIndex]];
-                        }
-
-                        return playersToShow.map((p) => {
-                            const isActive = p.id === (activePlayerId || currentTurn?.playerId);
-                            const isNext = players.length > 2 && p.id === players[(currentPlayerIndex + 1) % players.length].id && !isActive;
-                            const pHistory = history.filter(h => h.playerId === p.id).slice(-3).reverse();
-                            const gridColsClass = playersToShow.length === 1 ? 'col-span-2' : 'col-span-1';
-
-                            return (
-                                <div key={p.id} className={`flex flex-col items-center justify-center p-2 transition-all duration-300 relative ${gridColsClass} ${isActive
-                                    ? 'bg-background text-foreground border-b-2 border-primary/20'
-                                    : isNext ? 'bg-muted/10 text-muted-foreground/80 scale-95 opacity-80' : 'bg-muted/5 text-muted-foreground opacity-60 scale-95'
-                                    }`}>
-                                    {isNext && <div className="absolute top-1 right-2 text-[10px] font-bold uppercase tracking-tighter opacity-50">Next</div>}
-
-                                    <div className="text-xl font-medium mb-1 opacity-80">{p.name}</div>
-
-                                    {/* Legs Won Indicator */}
-                                    <div className="flex items-center gap-1 mb-2">
-                                        <span className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Legs:</span>
-                                        <span className="text-lg font-bold">{p.legsWon}</span>
-                                    </div>
-
-                                    <div className={`text-6xl font-bold tabular-nums tracking-tighter ${isActive ? 'text-primary' : 'text-muted-foreground'}`}>
-                                        {p.score}
-                                    </div>
-
-                                    {/* History Display */}
-                                    <div className="flex gap-1 h-6 items-center opacity-80 mt-2">
-                                        {pHistory.map((turn, i) => {
-                                            const turnScore = turn.scoreBefore - turn.scoreAfter;
-                                            return (
-                                                <div key={turn.id} className={`flex items-center justify-center border rounded-md px-1 min-w-[2rem] text-xs font-mono
-                                                    ${i === 0 ? 'bg-muted/50 border-muted-foreground/30 font-bold' : 'bg-transparent border-transparent text-muted-foreground/50'}`}>
-                                                    {turn.isBust ? "X" : turnScore}
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {isActive && !legWinnerId && !winnerId && (
-                                        <div className="absolute bottom-4 text-xs font-medium text-primary animate-pulse">
-                                        </div>
-                                    )}
+                {/* Help Overlay */}
+                {showHelp && (
+                    <div className="fixed inset-0 bg-background/98 z-[200] flex flex-col items-center justify-center p-6 animate-in fade-in slide-in-from-bottom duration-300">
+                        <div className="w-full max-sm:px-4 max-w-sm bg-card border border-border rounded-[2.5rem] p-10 shadow-2xl relative text-white border-white/10">
+                            <Button variant="ghost" size="icon" onClick={() => setShowHelp(false)} className="absolute top-6 right-6 text-muted-foreground hover:text-white">
+                                <X className="w-8 h-8" />
+                            </Button>
+                            <h2 className="text-3xl font-black font-oswald tracking-tighter uppercase mb-8 text-center text-dart-orange">Voice Help</h2>
+                            <div className="space-y-6">
+                                <div className="p-5 bg-white/5 rounded-3xl border border-white/10">
+                                    <p className="text-xs font-bold opacity-70 mb-2 uppercase tracking-widest text-white/50">Command:</p>
+                                    <p className="text-2xl font-black font-oswald tracking-tight">Say <span className="text-dart-green mr-1">"SCORE"</span> [Value]</p>
+                                    <p className="text-sm opacity-50 mt-3 italic font-bold">Example: "Score 140"</p>
                                 </div>
-                            );
-                        });
-                    })()}
-                </div>
-
-                {/* Active Turn Visualization (Bottom) */}
-                <div className="flex-none p-4 pt-1 bg-background border-t min-h-[4rem] flex justify-center items-center gap-4">
-                    {/* Persistent Voice Control */}
-                    {(!legWinnerId && !winnerId) && (
-                        <VoiceControl
-                            inputMode={inputMode}
-                            mini={true}
-                            className="h-14 w-14 bg-secondary/80 hover:bg-secondary"
-                            // Stores handles auto-advance
-                            onTotalScore={(val: number) => manualTurn(val)}
-                        />
-                    )}
-
-                    {(inputMode === 'single' && !legWinnerId && !winnerId) ? (
-                        <>
-                            {[0, 1, 2].map(i => {
-                                const t = currentTurn?.throws[i];
-                                return (
-                                    <ThrowDisplay
-                                        key={i}
-                                        throwData={t || null}
-                                        active={currentTurn?.throws.length === i}
-                                        size="lg"
-                                    />
-                                );
-                            })}
-
-                            {/* Submit / Next Player Button */}
-                            <div className="flex items-center ml-2">
-                                <Button
-                                    size="icon"
-                                    className="h-14 w-14 rounded-full bg-green-600 hover:bg-green-700 shadow-sm"
-                                    disabled={!currentTurn}
-                                    onClick={(winnerId || legWinnerId) ? nextLeg : useX01Store.getState().nextPlayer}
-                                >
-                                    <Check className="w-8 h-8" />
-                                </Button>
                             </div>
-                        </>
-                    ) : inputMode === 'total' && !legWinnerId && !winnerId ? (
-                        <div className="text-sm text-muted-foreground opacity-50">
-                            Enter Total Score
+                            <Button className="w-full mt-10 h-16 rounded-2xl font-black text-xl bg-dart-green hover:bg-dart-green/90 text-white shadow-xl uppercase tracking-wider" onClick={() => setShowHelp(false)}>Got it!</Button>
                         </div>
-                    ) : null}
+                    </div>
+                )}
+
+                {/* Scoreboard Content Area - Centered Stack */}
+                <div className="flex flex-col flex-1 justify-center items-center px-4 overflow-hidden min-h-0">
+                    <div className={cn(
+                        "flex w-full rounded-[24px] overflow-hidden shadow-2xl border-2 border-white/5 transition-all duration-300 flex-1 min-h-[160px] max-h-[18rem] sm:max-h-[30rem]",
+                        players.length === 1 ? "max-w-xl h-full" : "h-full"
+                    )}>
+                        {(() => {
+                            const currentPlayerId = activePlayerId || currentTurn?.playerId;
+                            const currentPlayerIndex = players.findIndex(p => p.id === currentPlayerId);
+                            let playersToShow = players;
+
+                            if (players.length > 2) {
+                                const nextPlayerIndex = (currentPlayerIndex + 1) % players.length;
+                                playersToShow = [players[currentPlayerIndex], players[nextPlayerIndex]];
+                            } else if (players.length === 1) {
+                                playersToShow = [players[0]];
+                            }
+
+                            return playersToShow.map((p, index) => {
+                                const isActive = p.id === currentPlayerId;
+                                const isDummy = p.id === 'dummy';
+                                const bgColor = isActive && !isDummy ? "bg-dart-green shadow-[0_0_40px_-10px_rgba(34,197,94,0.3)]" : "bg-white/5 opacity-40 grayscale-[0.5]";
+
+                                // Basic Stats
+                                const threw = history.filter(h => h.playerId === p.id);
+                                const dartsThrownCount = threw.length * 3;
+                                const scoreThrown = startingScore - p.score;
+                                const avg = dartsThrownCount > 0 ? ((scoreThrown / dartsThrownCount) * 3).toFixed(2) : "0.00";
+                                const lastThrow = threw.length > 0 ? (threw[threw.length - 1].scoreBefore - threw[threw.length - 1].scoreAfter) : "-";
+
+                                // Checkout logic
+                                const dartsLeft = isActive ? 3 - (currentTurn?.throws.length || 0) : 3;
+                                const checkoutPath = isActive ? getCheckout(p.score, matchConfig.outMode, dartsLeft) : null;
+                                const noCheckout = isActive && p.score <= 170 && !checkoutPath;
+
+                                return (
+                                    <div key={p.id + index} className={cn("flex-1 px-4 py-4 sm:py-8 flex flex-col justify-center relative transition-colors duration-500", bgColor)}>
+                                        <div className="w-full">
+                                            {/* Player Header */}
+                                            <div className="flex items-center gap-3 mb-2">
+                                                {index === 0 && <div className="w-1.5 h-1.5 bg-black/40 rounded-full" />}
+                                                <div className="relative">
+                                                    <div className="w-8 sm:w-16 h-8 sm:h-16 bg-white/30 rounded-full flex items-center justify-center font-black text-white text-base sm:text-2xl">
+                                                        {p.name[0]?.toUpperCase()}
+                                                    </div>
+                                                    {matchConfig.lengthType === 'sets' && (
+                                                        <div className="absolute -top-1 -right-1 bg-white text-black text-[8px] sm:text-xs font-black px-1 rounded border border-black/10 shadow-sm">
+                                                            {p.setsWon}S
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="font-extrabold text-white text-base sm:text-3xl leading-none truncate">{p.name}</div>
+                                                    {!p.hasCheckedIn && isActive && (
+                                                        <div className="text-[8px] sm:text-xs font-black text-white/50 uppercase tracking-widest mt-0.5 animate-pulse">
+                                                            {matchConfig.inMode === 'double' ? 'Double In Required' : 'Master In Required'}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            </div>
+
+                                            {/* Score Section - Balanced margin */}
+                                            <div className={cn(
+                                                "flex justify-between items-start transition-all duration-300",
+                                                (isActive && (p.score <= 170 || noCheckout)) ? "mb-4 sm:mb-6" : "mb-4 sm:mb-8"
+                                            )}>
+                                                <div className="text-[14vw] sm:text-[10rem] leading-[0.6] font-oswald font-black text-white tracking-tighter">
+                                                    {isDummy ? "0" : p.score}
+                                                </div>
+                                                <div className="bg-black/30 text-white font-black px-2 sm:px-6 py-1 sm:py-4 rounded-lg sm:rounded-2xl text-xs sm:text-3xl border border-white/10 shadow-inner">
+                                                    {p.legsWon}
+                                                </div>
+                                            </div>
+
+                                            {/* Checkout Section - Three Boxes */}
+                                            {isActive && (p.score <= 170 || noCheckout) && (
+                                                <div className="mb-4 sm:mb-8 animate-in fade-in slide-in-from-top-2">
+                                                    {noCheckout ? (
+                                                        <div className="text-[10px] sm:text-sm font-black text-white/50 uppercase tracking-widest text-center">No Checkout</div>
+                                                    ) : checkoutPath ? (
+                                                        <div className="flex justify-center gap-1.5 sm:gap-4">
+                                                            {[0, 1, 2].map((i) => (
+                                                                <div key={i} className={cn(
+                                                                    "w-10 sm:w-20 aspect-square rounded-xl sm:rounded-2xl flex items-center justify-center border-2 shadow-lg transition-transform hover:scale-105",
+                                                                    checkoutPath[i] ? "bg-white border-white text-black" : "bg-black/10 border-white/10 text-transparent"
+                                                                )}>
+                                                                    <span className="text-xs sm:text-2xl font-black font-oswald uppercase">{checkoutPath[i] || "-"}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    ) : null}
+                                                </div>
+                                            )}
+
+                                            {/* Stats Container - Balanced padding */}
+                                            <div className={cn(
+                                                "space-y-1 pb-1 border-t border-white/10 bg-black/5 mx-[-16px] px-4 transition-all duration-300",
+                                                (isActive && (p.score <= 170 || noCheckout)) ? "pt-2 sm:pt-4" : "pt-4 sm:pt-8"
+                                            )}>
+                                                <div className="flex justify-between font-bold text-[10px] sm:text-lg uppercase tracking-widest text-white/70">
+                                                    <span>3-dart avg.</span>
+                                                    <span className="text-white font-black">{isDummy ? "0.00" : avg}</span>
+                                                </div>
+                                                <div className="flex justify-between font-bold text-[10px] sm:text-lg uppercase tracking-widest text-white/70">
+                                                    <span>Last score</span>
+                                                    <span className="text-white font-black">{isDummy ? "-" : lastThrow}</span>
+                                                </div>
+                                                <div className="flex justify-between font-bold text-[10px] sm:text-lg uppercase tracking-widest text-white/70">
+                                                    <span>Darts thrown</span>
+                                                    <span className="text-white font-black">{isDummy ? "0" : dartsThrownCount}</span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Active Triangle Indicator */}
+                                        {isActive && !isDummy && (
+                                            <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-8 sm:w-12 h-8 sm:h-12 bg-[#131E18] rotate-45 transform translate-y-1/2 rounded-sm" />
+                                        )}
+                                    </div>
+                                );
+                            });
+                        })()}
+                    </div>
                 </div>
             </div>
         </div>

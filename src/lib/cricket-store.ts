@@ -17,7 +17,7 @@ interface CricketState {
     turnSnapshots: Player[][]; // Snapshots of players state BEFORE each throw in current turn
 
     // Actions
-    initGame: (playerNames: string[], matchConfig?: { mode: 'firstTo' | 'bestOf', target: number }) => void;
+    initGame: (players: { id: string, name: string }[], matchConfig?: { mode: 'firstTo' | 'bestOf', target: number }, isRemote?: boolean) => void;
     addThrow: (t: Throw) => void;
     undoThrow: () => void;
     nextPlayer: () => void;
@@ -39,13 +39,14 @@ export const useCricketStore = create<CricketState>()(
             matchConfig: { mode: 'firstTo', target: 1 },
             turnSnapshots: [],
 
-            initGame: (playerNames, matchConfig) => {
-                const players: Player[] = playerNames.map(name => ({
-                    id: uuidv4(),
-                    name,
+            initGame: (selectedPlayers, matchConfig, isRemote) => {
+                const players: Player[] = selectedPlayers.map(p => ({
+                    id: p.id,
+                    name: p.name,
                     score: 0,
                     legsWon: 0,
                     setsWon: 0,
+                    hasCheckedIn: true,
                     cricketData: { 15: 0, 16: 0, 17: 0, 18: 0, 19: 0, 20: 0, 25: 0 }
                 }));
 
@@ -68,6 +69,12 @@ export const useCricketStore = create<CricketState>()(
                     matchConfig: matchConfig || { mode: 'firstTo', target: 1 },
                     turnSnapshots: []
                 });
+
+                // Broadcast if online and NOT a remote initialization
+                const mp = useMultiplayerStore.getState();
+                if (mp.activeSession && !isRemote) {
+                    mp.broadcast('init-game', { type: 'Cricket', playerNames: selectedPlayers.map(p => p.name), matchConfig });
+                }
             },
 
             addThrow: (t) => {
@@ -162,34 +169,22 @@ export const useCricketStore = create<CricketState>()(
                 // 1. If we have throws in current turn, revert to last snapshot
                 if (state.currentTurn && state.currentTurn.throws.length > 0) {
                     const lastSnapshot = state.turnSnapshots[state.turnSnapshots.length - 1];
+                    if (!lastSnapshot) return; // Guard against missing snapshots
+
                     const remainingSnapshots = state.turnSnapshots.slice(0, -1);
                     const remainingThrows = state.currentTurn.throws.slice(0, -1);
 
+                    const turnPlayer = lastSnapshot[state.currentPlayerIndex];
                     set({
                         players: lastSnapshot,
                         currentTurn: {
                             ...state.currentTurn,
                             throws: remainingThrows,
-                            scoreAfter: remainingThrows.reduce((sum, t) => sum + (t.score * t.multiplier), state.currentTurn?.scoreBefore || 0)
-                            // Actually scoreAfter in Cricket is complex because of 'everyoneElseClosed' check.
-                            // But since we restore players state from snapshot, scoreAfter only matters for visual.
-                            // Let's just recalculate from snapshots if needed, but restoring players is key.
+                            scoreAfter: turnPlayer.score
                         },
                         turnSnapshots: remainingSnapshots,
                         winnerId: null
                     });
-
-                    // Fixed scoreAfter calculation for visual consistency
-                    const updatedState = get();
-                    if (updatedState.currentTurn) {
-                        const turnPlayer = lastSnapshot[state.currentPlayerIndex];
-                        set({
-                            currentTurn: {
-                                ...updatedState.currentTurn,
-                                scoreAfter: turnPlayer.score
-                            }
-                        });
-                    }
                     return;
                 }
 
@@ -203,7 +198,7 @@ export const useCricketStore = create<CricketState>()(
                         currentTurn: previousTurn,
                         currentPlayerIndex: prevPlayerIndex,
                         winnerId: null,
-                        turnSnapshots: [] // We don't save per-throw snapshots across turns for now to save storage
+                        turnSnapshots: previousTurn.cricketSnapshots || []
                     });
                 }
             },
@@ -218,7 +213,11 @@ export const useCricketStore = create<CricketState>()(
                     mp.broadcast('next-player', {});
                 }
 
-                const history = [...state.history, state.currentTurn];
+                const finishedTurn: Turn = {
+                    ...state.currentTurn,
+                    cricketSnapshots: state.turnSnapshots
+                };
+                const history = [...state.history, finishedTurn];
                 const nextIndex = (state.currentPlayerIndex + 1) % state.players.length;
                 const nextPlayer = state.players[nextIndex];
 

@@ -1,9 +1,22 @@
 import { useCricketStore } from "@/lib/cricket-store";
 import { Button } from "@/components/ui/button";
 import { Undo, UserPlus } from "lucide-react";
+import { useEffect } from "react";
 
 export function CricketScoreboard() {
     const { players, currentTurn, winnerId, resetGame, addThrow, undoThrow, nextPlayer } = useCricketStore();
+
+    // Auto-switch effect for Cricket
+    useEffect(() => {
+        if (!currentTurn || winnerId) return;
+        const shouldAutoSwitch = currentTurn.throws.length === 3;
+        if (shouldAutoSwitch) {
+            const timer = setTimeout(() => {
+                nextPlayer();
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [currentTurn?.throws.length, winnerId, nextPlayer]);
 
     if (players.length === 0) {
         return <div className="p-8 text-center text-muted-foreground">No game active</div>;

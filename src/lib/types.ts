@@ -1,4 +1,4 @@
-export type GameType = '301' | '501' | '701' | 'Custom' | 'Cricket';
+export type GameType = '301' | '501' | '701' | 'Custom' | 'Cricket' | 'Around the Clock';
 
 export interface Player {
     id: string;
@@ -6,7 +6,16 @@ export interface Player {
     score: number; // Current remaining score or cricket points
     legsWon: number;
     setsWon: number;
+    hasCheckedIn: boolean;
     cricketData?: CricketMarks; // Tracks marks for 15-20 and Bull
+    clockTarget?: number; // 1-21 (21 is Bull)
+    clockFinished?: boolean;
+    // X01 Stats tracking
+    checkoutAttempts?: number;
+    highFinish?: number;
+    first9Scores?: number[]; // Array of scores from first 3 visits of each leg
+    isOnline?: boolean;
+    onlineId?: string;
 }
 
 export type CricketNumber = 15 | 16 | 17 | 18 | 19 | 20 | 25;
@@ -33,6 +42,7 @@ export interface Turn {
     scoreBefore: number;
     scoreAfter: number;
     isBust: boolean;
+    cricketSnapshots?: Player[][]; // Optional snapshots for Cricket undo
 }
 
 export interface GameState {
@@ -49,10 +59,21 @@ export interface GameState {
 }
 
 export type MatchMode = 'firstTo' | 'bestOf';
+export type OutMode = 'single' | 'double' | 'master';
+export type InMode = 'single' | 'double' | 'master';
+export type MatchLengthType = 'legs' | 'sets';
 
 export interface MatchConfig {
     mode: MatchMode;
-    target: number; // e.g. 3 legs
+    target: number; // e.g. 3 legs or sets
+    outMode?: OutMode;
+    inMode?: InMode;
+    lengthType?: MatchLengthType;
+}
+
+export interface ClockConfig {
+    useSkips: boolean;
+    finishMode: 'bull' | 'outer-bull';
 }
 // Player Management Types
 export type PlayerType = 'local' | 'guest' | 'online';

@@ -7,8 +7,8 @@ import { supabase } from '@/lib/supabase';
 
 export function useRealtimeSync() {
     const { activeSession } = useMultiplayerStore();
-    const { addThrow: addX01Throw, nextPlayer: nextX01Player } = useX01Store();
-    const { addThrow: addCricketThrow, nextPlayer: nextCricketPlayer } = useCricketStore();
+    const { addThrow: addX01Throw, nextPlayer: nextX01Player, initGame: initX01 } = useX01Store();
+    const { addThrow: addCricketThrow, nextPlayer: nextCricketPlayer, initGame: initCricket } = useCricketStore();
     const { user } = useAuthStore();
 
     useEffect(() => {
@@ -25,6 +25,20 @@ export function useRealtimeSync() {
                     addCricketThrow(payload.throw);
                 } else {
                     addX01Throw(payload.throw);
+                }
+            })
+            .on('broadcast', { event: 'init-game' }, ({ payload }) => {
+                if (payload.senderId === user.id) return;
+
+                const players = payload.playerNames.map((name: string, i: number) => ({
+                    id: `remote-${i}`, // Temporary IDs for Guest
+                    name
+                }));
+
+                if (payload.type === 'Cricket') {
+                    initCricket(players, payload.matchConfig, true);
+                } else {
+                    initX01(payload.type, players, payload.customScore, payload.matchConfig, true);
                 }
             })
             .on('broadcast', { event: 'next-player' }, ({ payload }) => {

@@ -165,15 +165,16 @@ export function VoiceControl({
                 size="icon"
                 disabled={!isSecure}
                 className={cn(
-                    "rounded-full shadow-sm transition-all duration-200",
-                    isListening ? activeClass : inactiveClass,
+                    "transition-all duration-200",
+                    isListening ? activeClass : (className?.includes('bg-') ? '' : inactiveClass),
                     !isSecure && "opacity-50 cursor-not-allowed",
+                    !className?.includes('rounded-') && "rounded-full",
                     className
                 )}
                 onClick={toggleListening}
                 title={!isSecure ? "Spracheingabe benötigt HTTPS auf dem Handy" : ""}
             >
-                {isListening ? <Mic className="h-5 w-5" /> : <MicOff className="h-5 w-5 opacity-50" />}
+                {isListening ? <Mic className="h-[6vw] min-h-[24px] w-[6vw] min-w-[24px]" /> : <MicOff className="h-[6vw] min-h-[24px] w-[6vw] min-w-[24px] opacity-50" />}
             </Button>
         );
     }
