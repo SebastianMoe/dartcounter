@@ -20,7 +20,7 @@ export function GameSetup({ initialGameType = '501', onStart, onBack, onAddPlaye
     const activeProfiles = activePlayerIds.map(id => getProfile(id)).filter(Boolean);
 
     const [gameType, setGameType] = useState<GameType>(initialGameType);
-    const [customScore, setCustomScore] = useState<string>("170");
+    const [customScore] = useState<string>("170");
 
     // Match Config State
     const [matchMode, setMatchMode] = useState<MatchMode>('firstTo');
