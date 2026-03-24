@@ -199,7 +199,6 @@ function App() {
   if (view === 'game-setup') {
     return <GameSetup initialGameType={selectedGameType} onStart={handleStartGame} onBack={() => setView('menu')} onAddPlayer={() => setView('add-player')} />;
   }
-
   // 3. Landing / Home View
   return (
     <div className="h-[100dvh] w-full flex flex-col bg-background text-foreground overflow-hidden relative">

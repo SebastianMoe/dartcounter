@@ -1,5 +1,5 @@
-# Stage 1: Build
-FROM node:20-alpine AS builder
+# Stage 1: Build (Using Debian for better QEMU/ARM64 compatibility during build)
+FROM node:20 AS builder
 
 WORKDIR /app
 
