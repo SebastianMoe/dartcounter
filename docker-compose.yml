@@ -1,0 +1,15 @@
+services:
+  darts:
+    image: ghcr.io/sebastianmoe/dartcounter:latest
+    build: .
+    container_name: darts
+    restart: unless-stopped
+    ports:
+      - "8090:8090"
+    volumes:
+      # Database, uploaded files and backups – back this folder up!
+      - ./pb_data:/pb/pb_data
+    environment:
+      # Optional: creates the admin login for http://<host>:8090/_/
+      PB_ADMIN_EMAIL: ${PB_ADMIN_EMAIL:-}
+      PB_ADMIN_PASSWORD: ${PB_ADMIN_PASSWORD:-}
