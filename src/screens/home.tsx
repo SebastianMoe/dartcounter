@@ -11,6 +11,7 @@ import { describeFormat } from '@/game/types';
 import { formatDate } from '@/lib/utils';
 import { MatchListItem } from './stats';
 import { scoreText } from '@/game/engine';
+import { legacyMatchCount } from '@/stores/legacy-history';
 
 export function HomeScreen() {
     const active = useMatch(s => s.active);
@@ -67,7 +68,7 @@ export function HomeScreen() {
                     <Card onClick={() => navigate('/stats')}>
                         <BarChart3 className="mb-2 h-6 w-6 text-primary" />
                         <div className="font-semibold">Statistik</div>
-                        <div className="text-xs text-muted-foreground">{matches.length} Spiele</div>
+                        <div className="text-xs text-muted-foreground">{matches.length + legacyMatchCount()} Spiele</div>
                     </Card>
                 </div>
 

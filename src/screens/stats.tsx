@@ -12,6 +12,7 @@ import { navigate, goBack } from '@/lib/router';
 import { cn, fmt1, formatDate, pct } from '@/lib/utils';
 import { CRICKET_METRICS, MatchStats, StatsTable, X01_METRICS, roundsMetrics } from './game/stats-table';
 import { LegList } from './game/leg-list';
+import { legacyStatsFor, type LegacyStats } from '@/stores/legacy-history';
 
 export function MatchListItem({ match }: { match: MatchRecord }) {
     const state = useMemo(() => replay(match), [match]);
@@ -41,6 +42,7 @@ interface ProfileSummary {
     wins: number;
     x01: X01Stats | null;
     x01Matches: { match: MatchRecord; stats: X01Stats }[];
+    legacy: LegacyStats | null;
 }
 
 function useProfileSummaries(): ProfileSummary[] {
@@ -56,11 +58,13 @@ function useProfileSummaries(): ProfileSummary[] {
             if (st.winner === idx && m.players.length > 1) wins++;
             if (st.kind === 'x01') x01Matches.push({ match: m, stats: x01Stats(st)[idx] });
         }
+        const legacy = legacyStatsFor(p);
         return {
-            id: p.id, name: p.name, matches: mine, wins, x01Matches,
+            id: p.id, name: p.name, matches: mine, wins, x01Matches, legacy,
             x01: x01Matches.length ? mergeX01Stats(x01Matches.map(x => x.stats)) : null,
         };
-    }).filter(s => s.matches.length > 0).sort((a, b) => b.matches.length - a.matches.length), [matches, profiles]);
+    }).filter(s => s.matches.length > 0 || s.legacy)
+        .sort((a, b) => (b.matches.length + (b.legacy?.matches ?? 0)) - (a.matches.length + (a.legacy?.matches ?? 0))), [matches, profiles]);
 }
 
 export function StatsScreen() {
@@ -79,11 +83,13 @@ export function StatsScreen() {
                             <Card key={s.id} onClick={() => navigate(`/stats/${s.id}`)} className="flex items-center gap-3">
                                 <div className="min-w-0 flex-1">
                                     <div className="truncate text-lg font-semibold">{s.name}</div>
-                                    <div className="text-xs text-muted-foreground">{s.matches.length} Spiele · {s.wins} Siege</div>
+                                    <div className="text-xs text-muted-foreground">
+                                        {s.matches.length + (s.legacy?.matches ?? 0)} Spiele · {s.wins + (s.legacy?.wins ?? 0)} Siege
+                                    </div>
                                 </div>
-                                {s.x01 && (
+                                {(s.x01 || s.legacy?.average) && (
                                     <div className="text-right">
-                                        <div className="text-2xl font-black tabular-nums text-primary">{fmt1(s.x01.average)}</div>
+                                        <div className="text-2xl font-black tabular-nums text-primary">{fmt1(s.x01 ? s.x01.average : s.legacy!.average!)}</div>
                                         <div className="text-[10px] uppercase text-muted-foreground">Ø 3 Darts</div>
                                     </div>
                                 )}
@@ -138,15 +144,17 @@ export function ProfileStatsScreen({ id }: { id: string }) {
 
     if (!summary) return <Page title="Statistik" back><Empty>Keine Daten.</Empty></Page>;
     const x = summary.x01;
+    const totalGames = summary.matches.length + (summary.legacy?.matches ?? 0);
+    const totalWins = summary.wins + (summary.legacy?.wins ?? 0);
     const recent = summary.x01Matches.slice(0, 12).reverse();
     const maxAvg = Math.max(60, ...recent.map(r => r.stats.average));
 
     return (
         <Page title={summary.name} back>
             <div className="mb-6 grid grid-cols-3 gap-2">
-                <Tile label="Spiele" value={summary.matches.length} />
-                <Tile label="Siege" value={summary.wins} />
-                <Tile label="Siegquote" value={summary.matches.length ? `${Math.round(summary.wins / summary.matches.length * 100)} %` : '–'} />
+                <Tile label="Spiele" value={totalGames} />
+                <Tile label="Siege" value={totalWins} />
+                <Tile label="Siegquote" value={totalGames ? `${Math.round(totalWins / totalGames * 100)} %` : '–'} />
             </div>
 
             {x && (
@@ -186,6 +194,7 @@ export function ProfileStatsScreen({ id }: { id: string }) {
                     <StatsTable names={['Gesamt']} stats={[r.stats]} metrics={roundsMetrics(r.kind)} />
                 </Section>
             ))}
+            {summary.legacy && <LegacyBlock stats={summary.legacy} />}
             <Section title="Spiele">
                 <div className="space-y-2">{summary.matches.slice(0, 30).map(m => <MatchListItem key={m.id} match={m} />)}</div>
             </Section>
@@ -217,5 +226,28 @@ export function MatchDetailScreen({ id }: { id: string }) {
                 </div>
             </Sheet>
         </Page>
+    );
+}
+
+function LegacyBlock({ stats }: { stats: LegacyStats }) {
+    const d = (iso: string) => (iso ? new Date(iso).toLocaleDateString('de-DE', { month: '2-digit', year: '2-digit' }) : '');
+    const sc = stats.scores;
+    return (
+        <Section title={`Ältere Spiele (vorherige App-Version) · ${stats.matches}`}>
+            <div className="grid grid-cols-3 gap-2">
+                <Tile label="Siege" value={stats.wins} />
+                <Tile label="Ø 3 Darts (X01)" value={stats.average === null ? '–' : fmt1(stats.average)} accent />
+                <Tile label="Bester Ø" value={stats.bestAverage ? fmt1(stats.bestAverage) : '–'} />
+                <Tile label="Ø First 9" value={stats.first9 === null ? '–' : fmt1(stats.first9)} />
+                <Tile label="Höchstes Finish" value={stats.highestFinish || '–'} />
+                <Tile label="180er" value={sc['180'] ?? 0} />
+                <Tile label="140+" value={sc['140+'] ?? 0} />
+                <Tile label="100+" value={(sc['100+'] ?? 0) + (sc['120+'] ?? 0)} />
+                <Tile label="Darts" value={stats.darts} />
+            </div>
+            <p className="mt-2 px-1 text-xs text-muted-foreground">
+                Aus der vorherigen Version übernommen{stats.firstDate ? ` (${d(stats.firstDate)} – ${d(stats.lastDate)})` : ''}. Diese Spiele enthalten keine einzelnen Würfe.
+            </p>
+        </Section>
     );
 }

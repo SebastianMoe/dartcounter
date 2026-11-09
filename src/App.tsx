@@ -1,4 +1,5 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
+import { isUnlocked, PinLock } from '@/components/pin-lock';
 import { useRoute } from '@/lib/router';
 import { useAuth } from '@/stores/auth';
 import { resumeOnlineMatch, useOnline } from '@/stores/online';
@@ -36,6 +37,7 @@ function InvitePopup({ route }: { route: string[] }) {
 export default function App() {
     const route = useRoute();
     const user = useAuth(s => s.user);
+    const [unlocked, setUnlocked] = useState(isUnlocked);
 
     useEffect(() => {
         useAuth.getState().init();
@@ -51,6 +53,8 @@ export default function App() {
         resumeOnlineMatch();
         void pullSharedMatches().then(() => syncPendingShares());
     }, [user?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (!unlocked) return <PinLock onUnlock={() => setUnlocked(true)} />;
 
     return (
         <>

@@ -26,8 +26,8 @@ export default defineConfig(({ command, mode }) => ({
         short_name: 'Darts',
         description: 'Darts Scoreboard für X01 und Cricket – lokal und online',
         lang: 'de',
-        theme_color: '#09090b',
-        background_color: '#09090b',
+        theme_color: '#141f19',
+        background_color: '#141f19',
         display: 'standalone',
         orientation: 'portrait',
         icons: [

@@ -3,29 +3,32 @@
 @tailwind utilities;
 
 @layer base {
-  :root {
-    --background: 240 10% 4%;
+  /* Dark green "dartboard" theme (from main), plus colours for doubles/triples */
+  :root, .dark {
+    --background: 147 23% 10%;
     --foreground: 0 0% 98%;
-    --card: 240 6% 9%;
+    --card: 150 18% 13%;
     --card-foreground: 0 0% 98%;
-    --popover: 240 6% 10%;
+    --popover: 150 18% 13%;
     --popover-foreground: 0 0% 98%;
-    --primary: 152 69% 45%;
-    --primary-foreground: 152 80% 8%;
-    --secondary: 240 4% 16%;
+    --primary: 135 36% 47%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 150 18% 20%;
     --secondary-foreground: 0 0% 98%;
-    --muted: 240 4% 14%;
-    --muted-foreground: 240 5% 62%;
-    --accent: 240 4% 20%;
+    --muted: 150 18% 18%;
+    --muted-foreground: 150 10% 65%;
+    --accent: 150 20% 22%;
     --accent-foreground: 0 0% 98%;
-    --destructive: 0 72% 51%;
+    --destructive: 9 75% 54%;
     --destructive-foreground: 0 0% 98%;
-    --double: 350 85% 60%;
-    --triple: 199 89% 55%;
-    --border: 240 4% 18%;
-    --input: 240 4% 20%;
-    --ring: 152 69% 45%;
+    --border: 150 18% 20%;
+    --input: 150 18% 20%;
+    --ring: 135 36% 47%;
     --radius: 0.75rem;
+
+    /* Dart colours */
+    --double: 9 75% 58%;
+    --triple: 199 89% 58%;
   }
 
   * {
