@@ -1,73 +1,39 @@
-# React + TypeScript + Vite
+# Darts Scoreboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Mobile-first Darts-App (PWA) für **X01** (301/501/701/eigene, Single/Double/Master-Out, Double-In, Legs & Sätze), **Cricket**, **Around the Clock**, **Shanghai** und **Highscore** – mit Statistiken, Spracheingabe und Online-Spielen gegen Freunde.
 
-Currently, two official plugins are available:
+**Spracheingabe** (Mikrofon im Spiel): „Triple 20, Doppel 16“, „hundertvierzig“, „Bull“, „daneben“, „Check“, „Bust“, „rückgängig“. Sätze mit unbekannten Wörtern werden ignoriert. Braucht HTTPS; am besten Chrome (Android) bzw. Safari (iOS). Parser: `src/game/voice.ts`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## Aufbau
 
-## React Compiler
+| Teil | Technik |
+|---|---|
+| Frontend | React 19, Vite, Tailwind, Zustand (lokal gespeichert) |
+| Spiellogik | `src/game/` – reine Funktionen, Stand wird aus der Wurf-Liste berechnet (getestet mit Vitest) |
+| Backend | [PocketBase](https://pocketbase.io) – Login, Einladungen, Online-Matches (Echtzeit) |
+| Datenbankschema | `pb_migrations/` – wird beim Start automatisch angewendet |
+| Betrieb | **Ein** Docker-Container: PocketBase liefert API und Frontend aus |
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+Lokale Spiele und Statistiken funktionieren komplett ohne Server (auch offline). Der Server wird nur für Online-Spiele gebraucht.
 
-## Expanding the ESLint configuration
+## Entwicklung
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+# PocketBase lokal starten (Binary von github.com/pocketbase/pocketbase/releases):
+pocketbase serve --migrationsDir ./pb_migrations
+npm run dev        # https://<rechner-ip>:5173 – /api wird an PocketBase weitergeleitet
+npm test           # Engine-Tests
+npm run icons      # App-Icons aus public/icon.svg erzeugen
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+## Betrieb (z. B. Raspberry Pi)
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+docker compose up -d          # App + API auf Port 8090, Daten in ./pb_data
 ```
+
+- Admin-Oberfläche: `http://<host>:8090/_/` (Login über `PB_ADMIN_EMAIL` / `PB_ADMIN_PASSWORD` in `.env`)
+- Image: `ghcr.io/sebastianmoe/dartcounter:latest` (amd64, arm64, arm/v7) wird bei jedem Push auf `main` gebaut
+- **HTTPS** wird für App-Installation, „Bildschirm anlassen" und Offline-Modus auf dem Handy benötigt (z. B. per Tailscale oder Caddy davor)
+- Backup: Ordner `pb_data` sichern oder Backups in der Admin-Oberfläche planen

@@ -3,64 +3,62 @@
 @tailwind utilities;
 
 @layer base {
+  /* Dark green "dartboard" theme (from main), plus colours for doubles/triples */
   :root, .dark {
-    /* DartCounter style background: very dark green */
     --background: 147 23% 10%;
     --foreground: 0 0% 98%;
-    
-    /* Cards and popovers: lighter dark green */
     --card: 150 18% 13%;
     --card-foreground: 0 0% 98%;
     --popover: 150 18% 13%;
     --popover-foreground: 0 0% 98%;
-    
-    /* Primary buttons (Submit in DartCounter is Green) */
     --primary: 135 36% 47%;
     --primary-foreground: 0 0% 100%;
-    
-    /* Secondary elements (e.g. settings buttons, inactive state) */
     --secondary: 150 18% 20%;
     --secondary-foreground: 0 0% 98%;
-    
-    /* Muted text and backgrounds */
     --muted: 150 18% 18%;
     --muted-foreground: 150 10% 65%;
-    
-    /* Hover accent colors */
     --accent: 150 20% 22%;
     --accent-foreground: 0 0% 98%;
-    
-    /* Destructive/Red */
     --destructive: 9 75% 54%;
     --destructive-foreground: 0 0% 98%;
-    
-    /* Borders and inputs */
     --border: 150 18% 20%;
     --input: 150 18% 20%;
     --ring: 135 36% 47%;
-    
     --radius: 0.75rem;
 
-    /* --- Central Configurable Dart Colors --- */
-    --dart-red: 9 75% 54%;
-    --dart-green: 135 36% 47%;
-    --dart-orange: 30 89% 54%;
-    
-    /* Standard chart colors preserved */
-    --chart-1: 220 70% 50%;
-    --chart-2: 160 60% 45%;
-    --chart-3: 30 80% 55%;
-    --chart-4: 280 65% 60%;
-    --chart-5: 340 75% 55%;
+    /* Dart colours */
+    --double: 9 75% 58%;
+    --triple: 199 89% 58%;
   }
-}
 
-@layer base {
   * {
     @apply border-border;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
   }
 
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground antialiased;
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    overscroll-behavior: none;
+    font-feature-settings: 'tnum' 1;
   }
+
+  button {
+    touch-action: manipulation;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+}
+
+@layer utilities {
+  .pt-safe { padding-top: max(env(safe-area-inset-top), 0px); }
+  .pb-safe { padding-bottom: max(env(safe-area-inset-bottom), 0.5rem); }
+  .no-scrollbar::-webkit-scrollbar { display: none; }
+  .no-scrollbar { scrollbar-width: none; }
 }
