@@ -33,7 +33,10 @@ export const voiceSupported = () => !!getCtor() && window.isSecureContext;
 
 export type VoiceStatus = 'off' | 'starting' | 'listening' | 'paused' | 'error';
 
-export function useVoice(onFinal: (alternatives: string[]) => void) {
+export function useVoice(
+    onFinal: (alternatives: string[]) => void,
+    extra: { onInterim?: (text: string) => void; onStart?: () => void } = {},
+) {
     const [status, setStatus] = useState<VoiceStatus>('off');
     const [interim, setInterim] = useState('');
     const [error, setError] = useState<string | null>(null);
@@ -43,14 +46,17 @@ export function useVoice(onFinal: (alternatives: string[]) => void) {
     const restarts = useRef<number[]>([]);
     const lastFinal = useRef({ text: '', at: 0 });
     const handler = useRef(onFinal);
-    useEffect(() => { handler.current = onFinal; }, [onFinal]);
+    const extraRef = useRef(extra);
+    useEffect(() => { handler.current = onFinal; extraRef.current = extra; });
 
     // Dev only: simulate recognised speech from the console, e.g. __say('triple 20')
     useEffect(() => {
         if (!import.meta.env.DEV) return;
         const w = window as unknown as { __say?: (...alts: string[]) => void };
+        const wi = window as unknown as { __interim?: (t: string) => void };
         w.__say = (...alts) => handler.current(alts);
-        return () => { delete w.__say; };
+        wi.__interim = (t) => extraRef.current.onInterim?.(t);
+        return () => { delete w.__say; delete wi.__interim; };
     }, []);
 
     const startRec = useCallback(() => {
@@ -78,7 +84,7 @@ export function useVoice(onFinal: (alternatives: string[]) => void) {
         r.continuous = true;
         r.interimResults = true;
         r.maxAlternatives = 4;
-        r.onstart = () => { setStatus('listening'); setError(null); };
+        r.onstart = () => { setStatus('listening'); setError(null); extraRef.current.onStart?.(); };
         r.onresult = (e) => {
             let interimText = '';
             for (let i = e.resultIndex; i < e.results.length; i++) {
@@ -98,6 +104,7 @@ export function useVoice(onFinal: (alternatives: string[]) => void) {
                 }
             }
             setInterim(interimText);
+            extraRef.current.onInterim?.(interimText);
         };
         r.onerror = (e) => {
             if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
