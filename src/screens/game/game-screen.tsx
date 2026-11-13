@@ -18,7 +18,8 @@ import { CRICKET_NUMBERS } from '@/game/cricket';
 import { CricketBoard, RoundsBoard, VisitStrip, X01Board, pendingTotal } from './boards';
 import { roundsTarget } from '@/game/rounds';
 import { dartLabel, type Dart } from '@/game/types';
-import { parseAlternatives, parseVoice, type VoiceContext } from '@/game/voice';
+import { parseVoice, type VoiceCommand, type VoiceContext } from '@/game/voice';
+import { VoiceSession } from '@/game/voice-session';
 import { useVoice } from '@/lib/use-voice';
 import { DartPad, TotalPad } from './pads';
 import { MatchStats } from './stats-table';
@@ -43,8 +44,23 @@ export function GameScreen() {
     const lastVisitCount = useRef<number>(-1);
     const [voiceMsg, setVoiceMsg] = useState<{ ok: boolean; text: string } | null>(null);
     const [voiceHelp, setVoiceHelp] = useState(false);
-    const voiceHandler = useRef<(alts: string[]) => void>(() => { });
-    const voice = useVoice(alts => voiceHandler.current(alts));
+    // Voice: the session turns recognised text into commands ("Score …", "Total …", "weiter" …)
+    const voiceRefs = useRef<{
+        apply: (c: VoiceCommand, label: string) => void;
+        intercept: (alts: string[]) => boolean;
+        error: (m: string) => void;
+        context: () => VoiceContext;
+    }>({ apply: () => { }, intercept: () => false, error: () => { }, context: () => ({ mode: 'darts', allowTotal: false }) });
+    const [voiceSession] = useState(() => new VoiceSession({
+        context: () => voiceRefs.current.context(),
+        onCommand: (c, label) => voiceRefs.current.apply(c, label),
+        onError: m => voiceRefs.current.error(m),
+        intercept: alts => voiceRefs.current.intercept(alts),
+    }));
+    const voice = useVoice(alts => voiceSession.final(alts), {
+        onInterim: t => voiceSession.interim(t),
+        onStart: () => voiceSession.newRecognition(),
+    });
 
     useEffect(() => {
         if (!voiceMsg) return;
@@ -111,27 +127,25 @@ export function GameScreen() {
         return null;
     }
 
-    function handleVoice(alts: string[]) {
-        if (!state || state.winner !== null || alts.length === 0) return;
-        const report = (err: string | null, label: string) => {
-            setVoiceMsg(err ? { ok: false, text: err } : { ok: true, text: label });
-            haptic(err ? 80 : 25);
-        };
-        const ctx: VoiceContext = { mode: state.kind === 'x01' ? prefs.inputMode : 'darts', allowTotal: state.kind === 'x01' };
+    const report = (err: string | null, label: string) => {
+        setVoiceMsg(err ? { ok: false, text: err } : { ok: true, text: label });
+        haptic(err ? 80 : 25);
+    };
 
-        // Answer to "how many darts?" for a checkout
-        if (checkoutAsk !== null) {
-            for (const a of alts) {
-                const c = parseVoice(a, { mode: 'total', allowTotal: true });
-                const n = c?.type === 'total' ? c.score : c?.type === 'darts' && c.darts.length === 1 ? c.darts[0].s : 0;
-                if (n >= 1 && n <= 3) return report(confirmCheckout(n), `Checkout mit ${n} ${n === 1 ? 'Dart' : 'Darts'}`);
-            }
-            return report('Bitte „eins“, „zwei“ oder „drei“ sagen.', '');
+    /** Answer to "how many darts?" after a checkout – plain numbers without activation word. */
+    function interceptVoice(alts: string[]): boolean {
+        if (checkoutAsk === null) return false;
+        for (const a of alts) {
+            const c = parseVoice(a, { mode: 'total', allowTotal: true });
+            const n = c?.type === 'total' ? c.score : c?.type === 'darts' && c.darts.length === 1 ? c.darts[0].s : 0;
+            if (n >= 1 && n <= 3) { report(confirmCheckout(n), `Checkout mit ${n} ${n === 1 ? 'Dart' : 'Darts'}`); return true; }
         }
+        report('Bitte „eins“, „zwei“ oder „drei“ sagen.', '');
+        return true;
+    }
 
-        const r = parseAlternatives(alts, ctx);
-        if (!r) return report(`„${alts[0]}“ nicht verstanden`, '');
-        const c = r.command;
+    function applyVoice(c: VoiceCommand, label: string) {
+        if (!state || state.winner !== null) return;
         const { push: pushEvent, undo: undoEvent } = useMatch.getState();
         switch (c.type) {
             case 'next':
@@ -149,7 +163,8 @@ export function GameScreen() {
                 if (state.kind !== 'x01') return report('Nur bei X01.', '');
                 return report(submitTotal(liveRemaining(state, state.current)), `Check ${liveRemaining(state, state.current)}`);
             case 'total':
-                return report(submitTotal(c.score), String(c.score));
+                if (state.pending.length > 0) return report('Erst die angefangene Aufnahme beenden („weiter“ oder „rückgängig“).', '');
+                return report(submitTotal(c.score), label);
             case 'darts': {
                 const done: Dart[] = [];
                 for (const d of c.darts) {
@@ -162,7 +177,14 @@ export function GameScreen() {
         }
     }
 
-    useEffect(() => { voiceHandler.current = handleVoice; });
+    useEffect(() => {
+        voiceRefs.current = {
+            apply: applyVoice,
+            intercept: interceptVoice,
+            error: (m: string) => report(m, ''),
+            context: () => ({ mode: state?.kind === 'x01' ? prefs.inputMode : 'darts', allowTotal: state?.kind === 'x01' }),
+        };
+    });
 
     if (!active || !state) return null;
 
@@ -222,7 +244,7 @@ export function GameScreen() {
                         onClick={() => {
                             haptic();
                             if (voice.active) voice.stop();
-                            else { voice.start(); setVoiceMsg({ ok: true, text: 'Sag z. B. „Triple 20“ oder „hundert“' }); }
+                            else { voice.start(); setVoiceMsg({ ok: true, text: state.kind === 'x01' ? 'Sag z. B. „Score Triple 20 …“ oder „Total 100“' : 'Sag z. B. „Score Triple 20 …“' }); }
                         }}
                         aria-label="Spracheingabe"
                     >
@@ -254,7 +276,7 @@ export function GameScreen() {
                             {voiceMsg ? (voiceMsg.ok ? <Check className="h-4 w-4 flex-none" /> : <X className="h-4 w-4 flex-none" />)
                                 : <Mic className={cn('h-4 w-4 flex-none', voice.status === 'listening' && 'animate-pulse text-destructive')} />}
                             <span className="min-w-0 flex-1 truncate">
-                                {voiceMsg?.text ?? voice.error ?? (voice.interim ? `„${voice.interim}“` : voice.status === 'paused' ? 'Pause …' : 'Hört zu …')}
+                                {voiceMsg?.text ?? voice.error ?? (voiceSession.preview ? `„${voiceSession.preview}“` : voice.status === 'paused' ? 'Pause …' : 'Hört zu …')}
                             </span>
                             <span className="flex-none text-xs opacity-60">Hilfe</span>
                         </button>
@@ -383,23 +405,23 @@ function LegInfo({ state, legIndex }: { state: MatchState; legIndex: number }) {
 
 function VoiceHelp({ kind }: { kind: MatchState['kind'] }) {
     const rows: [string, string][] = [
-        ['„Triple 20, Triple 19, Doppel 12“', 'Bis zu drei Darts auf einmal'],
-        ['„T20 T20 D16“, „zwei mal Triple 20“', 'Kurzformen gehen auch'],
-        ['„Bull“ / „Bullseye“ (oder „Doppel Bull“)', 'Bull = 25, Bullseye = 50'],
-        ['„Daneben“, „Miss“, „Null“', 'Kein Treffer'],
-        ['„Rückgängig“, „Zurück“', 'Letzten Dart löschen'],
-        ['„Weiter“, „Nächster“', 'Restliche Darts als Miss, nächster Spieler'],
+        ['„Score Triple 20, Triple 19, Doppel 12“', 'Bis zu drei Darts – bei drei sofort, sonst nach kurzer Pause'],
+        ['„Score T20 T20 D16“, „Score zwei mal Triple 20“', 'Kurzformen gehen auch'],
+        ['„Score Bull“ / „Score Bullseye“', 'Bull = 25, Bullseye = 50 (auch „Doppel Bull“)'],
+        ['„Score Triple 20 daneben daneben“', '„Daneben“, „Miss“, „Null“ = kein Treffer'],
+        ['„Rückgängig“, „Zurück“', 'Letzten Dart löschen (ohne „Score“)'],
+        ['„Weiter“, „Nächster“', 'Restliche Darts als Miss, nächster Spieler (ohne „Score“)'],
     ];
     if (kind === 'x01') rows.splice(1, 0,
-        ['„Hundertvierzig“, „60“', 'Summe der Aufnahme (bei Zahlen über 20 immer)'],
+        ['„Total hundertvierzig“, „Total 60“', 'Summe der Aufnahme (auch „Summe 60“)'],
         ['„Check“, „Game shot“', 'Rest ausgecheckt, danach „eins/zwei/drei“ für die Darts'],
-        ['„Bust“, „Überworfen“', 'Aufnahme mit 0 Punkten'],
+        ['„Bust“, „Total null“', 'Aufnahme mit 0 Punkten'],
     );
     return (
         <div className="space-y-2 text-sm">
             <p className="text-muted-foreground">
-                Mikrofon oben antippen – es hört dauerhaft zu. Sätze mit unbekannten Wörtern werden ignoriert,
-                damit normales Reden nicht gezählt wird. Funktioniert am besten in Chrome (Android) und Safari (iPhone), braucht HTTPS und Internet.
+                Mikrofon oben antippen – es hört dauerhaft zu. Darts beginnst du mit <b>„Score“</b>{kind === 'x01' && <>, Summen mit <b>„Total“</b></>}.
+                Alles andere wird ignoriert, damit normales Reden nicht gezählt wird. Funktioniert am besten in Chrome (Android) und Safari (iPhone), braucht HTTPS und Internet.
             </p>
             <div className="divide-y rounded-2xl border bg-card">
                 {rows.map(([say, what]) => (
